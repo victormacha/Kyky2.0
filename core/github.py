@@ -247,6 +247,8 @@ def _git(args, pasta, env=None):
 def github_publish(path, repo, mensagem="Atualização pela Kyky", private=True):
     """git add + commit + push de uma pasta local para github.com/repo (cria o repositório se não existir)."""
     from .tools import _resolve
+    if not (str(path).strip().startswith("~") or Path(str(path).strip().strip('"')).is_absolute()):
+        return "erro: informe o caminho ABSOLUTO da pasta a publicar (ex: a sua própria pasta, indicada no seu sistema)"
     pasta = _resolve(path)
     if not pasta.is_dir():
         return f"pasta não encontrada: {pasta}"

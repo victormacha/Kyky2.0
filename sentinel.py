@@ -25,27 +25,33 @@ STARTUP = Path(os.environ.get("APPDATA", ".")) / "Microsoft/Windows/Start Menu/P
 class Detector:
     """Conta transientes curtos (palma/estalo). 2 ou 3 regulares seguidos de silêncio = ativação."""
 
-    def __init__(self, sens=0.5):
-        self.k = 3 + sens * 8          # quantas vezes acima do ruído de fundo
-        self.floor = 0.03 + sens * 0.05  # volume mínimo absoluto
+    def __init__(self, sens=0.5, log=None):
+        self.k = 6 + sens * 14           # quantas vezes acima do ruído de fundo
+        self.floor = 0.002 + sens * 0.006  # volume mínimo absoluto (baixo: microfones de notebook captam fraco)
         self.bg, self.hits, self.busy_until, self.loud, self.prev, self.sharp = 1e-3, [], 0.0, 0, 1e-3, False
+        self.pre, self.pico, self.log = 1e-4, 0.0, log
 
     def feed(self, frame, t):
         rms = float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
         loud = rms > max(self.bg * self.k, self.floor)
         if not loud:
-            self.bg = 0.995 * self.bg + 0.005 * max(rms, 1e-4)
+            self.bg = 0.995 * self.bg + 0.005 * max(rms, 1e-5)
             if self.loud:                      # terminou um evento: validar duração
                 dur = self.loud * 0.01
-                if self.sharp and 0.004 < dur <= 0.12:  # início abrupto e curto = palma/estalo; longo = voz, tosse, música
+                ok = self.sharp and 0.004 < dur <= 0.15   # início abrupto e curto = palma/estalo; longo = voz, tosse, música
+                if ok:
                     self.hits.append(self.t0)
+                if self.log:
+                    self.log(f"som: pico {self.pico:.4f} fundo {self.bg:.5f} dur {dur:.2f}s subida {self.pico / self.pre:.0f}x -> {'conta' if ok else 'ignorado'}")
                 self.loud = 0
         else:
             if not self.loud:
                 if t < self.busy_until:
                     return None
-                self.t0 = t
-                self.sharp = rms > 6 * self.prev   # palma sobe de uma vez; sílaba de fala sobe devagar
+                self.t0, self.pre, self.pico = t, self.prev, rms
+            self.pico = max(self.pico, rms)
+            if self.loud < 3:                  # a palma pode cair na divisa entre dois quadros: olha os 3 primeiros
+                self.sharp = self.pico > 5 * self.pre   # palma sobe de uma vez; sílaba de fala sobe devagar
             self.loud += 1
             if self.loud * 0.01 > 0.25:        # barulho longo cancela a sequência
                 self.hits.clear()
@@ -71,15 +77,39 @@ def e_chamado(txt):
     return 0 < len(w) <= 4 and (w[:2] in (["que", "que"], ["qui", "qui"], ["ki", "ki"]) or w[0] in ("kiki", "quiqui", "kyky"))
 
 
+def registrar(txt):
+    """Log em data/sentinel.log (serve para calibrar a sensibilidade das palmas)."""
+    arq = BASE / "data" / "sentinel.log"
+    try:
+        arq.parent.mkdir(exist_ok=True)
+        if arq.exists() and arq.stat().st_size > 300_000:
+            arq.write_text("", encoding="utf-8")
+        with open(arq, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%d/%m %H:%M:%S')} {txt}\n")
+    except Exception:
+        pass
+
+
 def acordar(motivo):
+    """Palmas/estalos = modo foco. Com a janela aberta, só avisa; fechada, abre a Kyky já em modo foco."""
+    import urllib.request
+    registrar(f"ATIVOU: {motivo}")
     print(time.strftime("%H:%M:%S"), "→ acordando a Kyky:", motivo, flush=True)
-    subprocess.Popen([sys.executable, str(BASE / "start_kyky.py"), "--wake"], cwd=BASE,
+    foco = motivo in ("palmas", "estalos")
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8765/api/foco" if foco else "http://127.0.0.1:8765/api/auth/state",
+                                     method="POST" if foco else "GET", headers={"X-Kyky": "sentinela"})
+        if foco and json.loads(urllib.request.urlopen(req, timeout=3).read()).get("janelas"):
+            return                           # a janela aberta entrou/saiu do modo foco
+    except Exception:
+        pass
+    subprocess.Popen([sys.executable, str(BASE / "start_kyky.py"), "--wake", *(["--foco"] if foco else [])], cwd=BASE,
                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def rodar(sens, pausado=None):
     import sounddevice as sd
-    det, ultimo = Detector(sens), 0.0
+    det, ultimo = Detector(sens, registrar), 0.0
     pausado = pausado or threading.Event()
     rec = None
     modelo = BASE / "models" / "vosk-pt"
@@ -104,7 +134,7 @@ def rodar(sens, pausado=None):
             if rec and rec.AcceptWaveform((f * 32767).astype(np.int16).tobytes()):
                 txt = json.loads(rec.Result()).get("text", "")
                 ev = ev or ("voz" if e_chamado(txt) else None)
-            if ev and time.time() - ultimo > 20:
+            if ev and time.time() - ultimo > 4:
                 ultimo = time.time()
                 acordar(ev)
 

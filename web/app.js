@@ -29,15 +29,32 @@ async function idbPut(k, v) { const d = await idb(); return new Promise(r => { c
 async function idbGet(k) { const d = await idb(); return new Promise(r => { const q = d.transaction('files').objectStore('files').get(k); q.onsuccess = () => r(q.result); q.onerror = () => r(null); }); }
 async function idbDel(k) { const d = await idb(); return new Promise(r => { const t = d.transaction('files', 'readwrite'); t.objectStore('files').delete(k); t.oncomplete = r; }); }
 
-async function playTheme(test) {
-  const blob = await idbGet('theme'); if (!blob) return false;
-  const a = $('#theme'); a.src = URL.createObjectURL(blob);
+// devolve 'ok', 'sem-musica' ou 'bloqueado' (o navegador não deixou tocar sem um clique)
+async function playTheme(loop) {
+  const blob = await idbGet('theme'); if (!blob) return 'sem-musica';
+  const a = $('#theme'); a.src = URL.createObjectURL(blob); a.loop = !!loop;
   const vol = store.get('vol', 0.7); a.volume = 0;
-  try { await a.play(); } catch (e) { return false; }
+  try { await a.play(); } catch (e) { return 'bloqueado'; }
   let v = 0; const iv = setInterval(() => { v = Math.min(vol, v + vol / 20); a.volume = v; if (v >= vol) clearInterval(iv); }, 100);
-  if (!test) setTimeout(() => { const o = setInterval(() => { a.volume = Math.max(0, a.volume - 0.04); if (a.volume <= 0.01) { clearInterval(o); a.pause(); } }, 150); }, 26000);
-  return true;
+  return 'ok';
 }
+function fadeOutTheme() {
+  const a = $('#theme'); const o = setInterval(() => { a.volume = Math.max(0, a.volume - 0.04); if (a.volume <= 0.01) { clearInterval(o); a.pause(); } }, 120);
+}
+
+/* ---------------- Modo foco: palmas/estalos (sentinel.py) ligam e desligam; a música só toca aqui ---------------- */
+let focus = false;
+async function setFocus(on) {
+  focus = on; $('#focus-chip').classList.toggle('hidden', !on);
+  if (!on) { fadeOutTheme(); $('#subcaption').textContent = 'modo foco desligado'; return; }
+  const r = await playTheme(true);
+  if (r === 'sem-musica') $('#subcaption').textContent = 'modo foco ligado — escolha a música em Ajustes';
+  else if (r === 'bloqueado') {
+    $('#subcaption').textContent = 'modo foco ligado — clique em qualquer lugar para tocar a música';
+    document.addEventListener('pointerdown', () => { if (focus) playTheme(true); }, { once: true });
+  } else $('#subcaption').textContent = 'modo foco ligado';
+}
+$('#focus-chip').onclick = () => setFocus(false);
 
 /* ---------------- Boot ---------------- */
 async function boot() {
@@ -106,11 +123,12 @@ async function voiceLogin() {
 }
 
 async function enter() {
-  playTheme(false);
+  const focoPedido = !!new URLSearchParams(location.search).get('foco');   // aberta pelas palmas
   $('#boot').classList.add('out'); setTimeout(() => $('#boot').classList.add('hidden'), 1000);
   $('#app').classList.remove('hidden');
   try { log = (await api('/api/history')).map(m => ({ role: m.role, text: m.content })); } catch (e) {}
   connect(); setTab('chat', true); $('#app').classList.remove('locked'); $('#boot').classList.remove('fade'); setOrbMode(null);
+  if (focoPedido) setFocus(true);
   const h = new Date().getHours();
   const hi = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
   await sleep(900);
@@ -143,6 +161,7 @@ function connect() {
     if (m.type === 'tool') { setTool(m.name); touched.add(m.name); }
     else if (m.type === 'answer') { setOrbMode(null); const tx = plain(m.text); pushLog('assistant', tx); say(tx); $('#subcaption').textContent = 'via ' + m.provider; openTouched(); }
     else if (m.type === 'confirm') askConfirm(m);
+    else if (m.type === 'focus') setFocus(!focus);
     else if (m.type === 'error') { setOrbMode(null); $('#subcaption').textContent = '⚠ ' + m.text; setState('idle'); }
     else if (m.type === 'idle') { busy = false; setOrbMode(null); if (!speaking) setState('idle'); resumeListening(); }
   };
@@ -433,7 +452,7 @@ async function renderConfig(b) {
   b.innerHTML = `
   <div class="field"><label>Música de abertura</label>
     <input type="file" id="cf-music" accept="audio/*">
-    <small>${has ? '✔ música definida' : 'nenhuma música escolhida'} — toca ao entrar, como na abertura de um Jarvis.</small>
+    <small>${has ? '✔ música definida' : 'nenhuma música escolhida'} — toca no modo foco (2 palmas ou 3 estalos de dedo liga e desliga).</small>
     <div class="row"><button class="btn small" id="cf-test">TESTAR</button><button class="btn small ghost" id="cf-clear">REMOVER</button></div></div>
   <div class="field"><label>Volume da música</label><input type="range" id="cf-vol" min="0" max="1" step="0.05" value="${store.get('vol', 0.7)}"></div>
   <div class="field"><label>Sua foto (aparece na esfera)</label>
@@ -449,7 +468,7 @@ async function renderConfig(b) {
   $('#cf-face').onchange = async e => { if (e.target.files[0]) { await idbPut('face', e.target.files[0]); await loadFace(); renderTab(); } };
   $('#cf-brief').onchange = e => store.set('brief', e.target.checked);
   $('#cf-rate').oninput = e => store.set('rate', +e.target.value);
-  $('#cf-test').onclick = () => playTheme(true); $('#cf-clear').onclick = async () => { await idbDel('theme'); renderTab(); };
+  $('#cf-test').onclick = () => playTheme(false); $('#cf-clear').onclick = async () => { await idbDel('theme'); renderTab(); };
   $('#cf-vol').oninput = e => { store.set('vol', +e.target.value); $('#theme').volume = +e.target.value; };
   $('#cf-voice').onchange = e => { store.set('tts', e.target.value); say('Olá, esta é a minha voz. Sou a Kyky.'); };
   $('#cf-enroll').onclick = async () => {

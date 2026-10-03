@@ -15,7 +15,7 @@ EXECUTAVEIS = {".exe", ".bat", ".cmd", ".ps1", ".vbs", ".msi", ".lnk", ".js", ".
 
 # auto = executa direto | ask = pede a sua confirmação antes (write_file e open_path decidem caso a caso)
 PERMISSIONS = {"list_files": "auto", "read_file": "auto", "write_file": "auto", "run_python": "ask",
-               "open_path": "auto", "run_command": "ask", "github_create_repo": "ask", "github_publish": "ask",
+               "open_path": "auto", "open_app": "auto", "list_apps": "auto", "google_search": "auto", "run_command": "ask", "github_create_repo": "ask", "github_publish": "ask",
                "web_search": "auto", "fetch_url": "auto",
                "add_task": "auto", "list_tasks": "auto", "complete_task": "auto",
                "search_leads": "auto", "queue_outreach": "auto", "list_outreach": "auto",
@@ -105,6 +105,59 @@ def open_path(path):
     return f"aberto: {p}"
 
 
+_APPS = {"t": 0, "lista": []}
+APELIDOS = {"navegador": "brave", "word": "word", "excel": "excel", "powerpoint": "powerpoint", "zap": "whatsapp",
+            "bloco de notas": "bloco de notas", "notepad": "bloco de notas", "calculadora": "calculadora",
+            "explorador": "explorador de arquivos", "vscode": "visual studio code", "vs code": "visual studio code"}
+
+
+def _sem_acento(t):
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(t).lower()) if unicodedata.category(c) != "Mn").strip()
+
+
+def _apps():
+    """Apps do Menu Iniciar (normais e da Microsoft Store), guardados por 10 minutos."""
+    import json
+    import time
+    if time.time() - _APPS["t"] > 600 or not _APPS["lista"]:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-StartApps | ConvertTo-Json -Compress"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        dados = json.loads(r.stdout or "[]")
+        _APPS["lista"] = [(d["Name"], d["AppID"]) for d in (dados if isinstance(dados, list) else [dados])]
+        _APPS["t"] = time.time()
+    return _APPS["lista"]
+
+
+def open_app(name):
+    """Abre um aplicativo instalado pelo nome (Spotify, Discord, Word, Calculadora...)."""
+    alvo = _sem_acento(APELIDOS.get(_sem_acento(name), name))
+    apps = _apps()
+    iguais = [a for a in apps if _sem_acento(a[0]) == alvo]
+    comecam = [a for a in apps if _sem_acento(a[0]).startswith(alvo)]
+    contem = [a for a in apps if alvo in _sem_acento(a[0])]
+    achados = iguais or sorted(comecam, key=lambda a: len(a[0])) or sorted(contem, key=lambda a: len(a[0]))
+    if not achados:
+        return f"não achei nenhum app chamado '{name}' no Menu Iniciar"
+    nome, appid = achados[0]
+    subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{appid}"])
+    outros = f" (também existem: {', '.join(a[0] for a in achados[1:5])})" if len(achados) > 1 else ""
+    return f"abrindo {nome}{outros}"
+
+
+def list_apps(filtro=""):
+    f = _sem_acento(filtro)
+    return "\n".join(sorted(n for n, _ in _apps() if f in _sem_acento(n))) or "nenhum app encontrado"
+
+
+def google_search(query):
+    """Abre a pesquisa no Google no navegador padrão do usuário (com a conta dele logada)."""
+    from urllib.parse import quote_plus
+    os.startfile("https://www.google.com/search?q=" + quote_plus(str(query)))
+    return f"pesquisa aberta no navegador: {query}"
+
+
 def run_command(command, cwd="", timeout=120):
     """Roda um comando no terminal do Windows (cmd). Sempre pede confirmação."""
     pasta = _resolve(cwd) if cwd else WORKSPACE
@@ -143,7 +196,7 @@ def needs_confirm(name, args):
 
 
 FUNCS = {"list_files": list_files, "read_file": read_file, "write_file": write_file, "run_python": run_python,
-         "open_path": open_path, "run_command": run_command,
+         "open_path": open_path, "open_app": open_app, "list_apps": list_apps, "google_search": google_search, "run_command": run_command,
          "github_create_repo": github.github_create_repo, "github_publish": github.github_publish,
          "web_search": web.search, "fetch_url": web.fetch,
          "add_task": tasks.add_task, "list_tasks": tasks.list_tasks, "complete_task": tasks.complete_task,
@@ -164,13 +217,18 @@ def _spec(name, desc, props, required):
 
 _s = {"type": "string"}
 SPECS = [
-    _spec("list_files", "Lista arquivos. Caminho relativo = workspace; caminho absoluto (ex: C:/Users/victo/Desktop) = qualquer pasta do PC.",
+    _spec("list_files", "Lista arquivos. Caminho relativo = workspace; caminho absoluto (ex: a pasta Desktop do usuário) = qualquer pasta do PC.",
           {"path": _s}, []),
     _spec("read_file", "Lê um arquivo de texto. Relativo = workspace; absoluto = qualquer lugar do PC.", {"path": _s}, ["path"]),
     _spec("write_file", "Cria ou sobrescreve um arquivo. Use caminho ABSOLUTO para salvar onde o usuário pediu "
           "(Área de Trabalho, Documentos...); relativo cai no workspace.", {"path": _s, "content": _s}, ["path", "content"]),
     _spec("open_path", "Abre no PC: arquivo no programa padrão, pasta no Explorer, ou link no navegador.",
           {"path": _s}, ["path"]),
+    _spec("open_app", "Abre um aplicativo instalado no PC pelo nome (ex: Spotify, Discord, Word, Calculadora, Brave).",
+          {"name": _s}, ["name"]),
+    _spec("list_apps", "Lista os aplicativos instalados no PC (filtro opcional por nome).", {"filtro": _s}, []),
+    _spec("google_search", "Abre uma pesquisa no Google no navegador do usuario, para ELE ver. Para voce mesma pesquisar e ler resultados, use web_search.",
+          {"query": _s}, ["query"]),
     _spec("run_command", "Roda um comando no terminal do Windows (cmd), ex: git, pip, dir. Pede confirmação ao usuário.",
           {"command": _s, "cwd": _s, "timeout": {"type": "integer"}}, ["command"]),
     _spec("run_python", "Executa um script Python (relativo = workspace, ou caminho absoluto) e devolve a saída.",
@@ -236,7 +294,7 @@ SPECS = [
 ]
 
 
-def subset(prefixos=("github_", "anotar", "list_files", "read_file", "write_file", "open_path", "run_command")):
+def subset(prefixos=("github_", "anotar", "list_files", "read_file", "write_file", "open_path", "open_app", "run_command")):
     """Só as ferramentas relevantes (economiza tokens em tarefas de código)."""
     return [s for s in SPECS if s["function"]["name"].startswith(tuple(prefixos))]
 

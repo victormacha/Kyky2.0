@@ -63,14 +63,17 @@ def garantir_servidor():
 
 def main():
     garantir_servidor()
+    params = "&".join(p for p, flag in (("wake=1", "--wake"), ("foco=1", "--foco")) if flag in sys.argv)
+    alvo = URL + ("/?" + params if params else "")
     for exe in (r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
                 r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
                 r"C:\Program Files\Google\Chrome\Application\chrome.exe"):
         if os.path.exists(exe):
-            subprocess.Popen([exe, f"--app={URL}/?wake=1" if "--wake" in sys.argv else f"--app={URL}", "--window-size=1400,900"])
+            # autoplay liberado: a música do modo foco pode começar sem clique
+            subprocess.Popen([exe, f"--app={alvo}", "--window-size=1400,900", "--autoplay-policy=no-user-gesture-required"])
             return
     import webbrowser
-    webbrowser.open(URL + ("/?wake=1" if "--wake" in sys.argv else ""))
+    webbrowser.open(alvo)
 
 
 if __name__ == "__main__":

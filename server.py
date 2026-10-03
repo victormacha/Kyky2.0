@@ -36,7 +36,9 @@ REGRAS_VOZ = (
     "salvar algo no computador dele, use SEMPRE caminho absoluto. Pastas dele: "
     + ", ".join(f"{n} = {p}" for n, p in tools.PASTAS.items()) +
     ". Se ele não disser onde salvar, use a Área de Trabalho (Desktop). Depois de criar um arquivo que ele vai querer ver, "
-    "ofereça abrir com open_path. "
+    "ofereça abrir com open_path. Para abrir um programa pelo nome (Spotify, Word, WhatsApp...) use open_app, nunca diga "
+    "que não consegue abrir apps. Quando ele pedir para pesquisar algo NO GOOGLE ou no navegador dele, use google_search "
+    "(abre no navegador dele); para você mesma pesquisar e responder, use web_search. "
     f"\nGITHUB: para criar repositório use github_create_repo; para enviar uma pasta para o GitHub use github_publish "
     f"(cria o repositório se faltar, faz commit e push). A sua própria pasta (o seu código) é {BASE}; o repositório "
     "oficial de você mesma é victormacha/Kyky2.0, então 'se publica no GitHub' = github_publish com essa pasta e esse repositório."
@@ -343,6 +345,23 @@ async def api_tts(b: Fala, authorization: str = Header(None)):
     return Response(bytes(buf), media_type="audio/mpeg")
 
 
+# ---------- modo foco (disparado pelas palmas/estalos do sentinel.py) ----------
+JANELAS = set()
+
+
+@app.post("/api/foco")
+async def api_foco(x_kyky: str = Header(None)):
+    """Só o vigia chama (o cabeçalho próprio impede que outros sites disparem isso pelo navegador)."""
+    if x_kyky != "sentinela":
+        raise HTTPException(403, "só o vigia")
+    for w in list(JANELAS):
+        try:
+            await w.send_json({"type": "focus"})
+        except Exception:
+            JANELAS.discard(w)
+    return {"janelas": len(JANELAS)}
+
+
 # ---------- conversa por WebSocket ----------
 @app.websocket("/ws")
 async def ws_chat(ws: WebSocket, token: str = ""):
@@ -350,6 +369,7 @@ async def ws_chat(ws: WebSocket, token: str = ""):
         await ws.close(code=4401)
         return
     await ws.accept()
+    JANELAS.add(ws)
     loop = asyncio.get_running_loop()
     pending = {}
     busy = {"v": False}
@@ -413,6 +433,8 @@ async def ws_chat(ws: WebSocket, token: str = ""):
     except WebSocketDisconnect:
         for ev, _ in pending.values():
             ev.set()
+    finally:
+        JANELAS.discard(ws)
 
 
 @app.get("/")
