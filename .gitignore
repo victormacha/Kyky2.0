@@ -1,0 +1,16 @@
+__pycache__/
+secrets_local.py
+keys.txt
+kyky.db
+models_cache.json
+workspace/
+models/
+
+# dados locais: sessões logadas do navegador, senha/voz, logs
+data/
+*.log
+
+# informações pessoais (o perfil continua existindo só no seu PC)
+profile.md
+candidate.md
+reports/

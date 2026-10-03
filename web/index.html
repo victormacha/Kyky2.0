@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kyky</title>
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<!-- ===== BOOT + LOGIN ===== -->
+<section id="boot">
+  <div class="boot-box">
+    <div class="boot-logo">K Y K Y</div>
+    <div class="boot-sub">SISTEMA PESSOAL DE INTELIGÊNCIA</div>
+    <ul id="boot-steps"></ul>
+    <div class="bar"><i id="boot-bar"></i></div>
+
+    <div id="login" class="hidden">
+      <p id="login-title">AUTENTICAÇÃO</p>
+      <input id="pw" type="password" placeholder="senha" autocomplete="off">
+      <input id="pw2" type="password" placeholder="repita a senha" class="hidden" autocomplete="off">
+      <div class="row">
+        <button id="btn-login" class="btn">ENTRAR</button>
+        <button id="btn-voice" class="btn ghost hidden">🎙 ENTRAR COM A VOZ</button>
+      </div>
+      <p id="login-msg" class="msg"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== APP ===== -->
+<main id="app" class="hidden">
+  <nav id="side">
+    <div class="side-logo">K</div>
+    <button data-tab="chat" class="active"><span>💬</span>Conversa</button>
+    <button data-tab="tasks"><span>✓</span>Tarefas</button>
+    <button data-tab="canvas"><span>🎓</span>Canvas</button>
+    <button data-tab="leads"><span>📍</span>Leads</button>
+    <button data-tab="reports"><span>📰</span>Relatórios</button>
+    <button data-tab="jobs"><span>💼</span>Vagas</button>
+    <button data-tab="github"><span>⌘</span>GitHub</button>
+    <button data-tab="config" class="bottom"><span>⚙</span>Ajustes</button>
+  </nav>
+
+  <aside id="drawer">
+    <header><h2 id="drawer-title">Conversa</h2><button id="drawer-close" class="x">×</button></header>
+    <div id="drawer-body"></div>
+  </aside>
+
+  <section id="stage">
+    <div id="state-chip">EM ESPERA</div>
+    <canvas id="orb"></canvas>
+    <div id="caption"></div>
+    <div id="subcaption"></div>
+
+    <form id="composer">
+      <button type="button" id="mic" class="mic" title="Falar (ou clique na bola)">🎙</button>
+      <input id="text" type="text" placeholder="Fale com a Kyky ou escreva aqui…" autocomplete="off">
+      <button class="btn small">ENVIAR</button>
+    </form>
+    <div class="toggles">
+      <label><input type="checkbox" id="t-always"> sempre ouvindo</label>
+      <label><input type="checkbox" id="t-speak" checked> voz da Kyky</label>
+      <label><input type="checkbox" id="t-fast"> modo rápido</label>
+    </div>
+  </section>
+</main>
+
+<!-- ===== CONFIRMAÇÃO DE AÇÃO SENSÍVEL ===== -->
+<div id="confirm" class="modal hidden">
+  <div class="modal-box">
+    <h3>⚠ AÇÃO SENSÍVEL</h3>
+    <pre id="confirm-text"></pre>
+    <input id="confirm-pw" type="password" placeholder="sua senha" autocomplete="off">
+    <p id="confirm-note" class="msg"></p>
+    <div class="row">
+      <button id="confirm-ok" class="btn">APROVAR COM SENHA</button>
+      <button id="confirm-voice" class="btn ghost">🎙 APROVAR COM A VOZ</button>
+      <button id="confirm-no" class="btn danger">NEGAR</button>
+    </div>
+  </div>
+</div>
+
+<audio id="theme" preload="auto"></audio>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+{
+  "dias": 14,
+  "prioridade_dominios": [
+    "pucminas.br"
+  ],
+  "ignorar_remetentes": [
+    "noreply",
+    "no-reply",
+    "donotreply",
+    "do-not-reply",
+    "notifications",
+    "notification",
+    "mailer-daemon",
+    "newsletter",
+    "marketing",
+    "updates",
+    "news",
+    "info",
+    "contato",
+    "atendimento",
+    "suporte",
+    "support"
+  ],
+  "ignorar_dominios": [
+    "google.com",
+    "accounts.google.com",
+    "github.com",
+    "instagram.com",
+    "facebookmail.com",
+    "facebook.com",
+    "linkedin.com",
+    "tavily.com",
+    "youtube.com",
+    "spotify.com",
+    "airbnb.com",
+    "mercadolivre.com.br",
+    "mercadopago.com.br",
+    "uber.com",
+    "ifood.com.br",
+    "amazon.com.br",
+    "netflix.com",
+    "steampowered.com",
+    "discord.com",
+    "roblox.com",
+    "canva.com",
+    "notion.so",
+    "openai.com",
+    "anthropic.com"
+  ],
+  "ignorar_assuntos": [
+    "PUC Informa",
+    "Agenda Semanal",
+    "Dúvida sobre qual curso",
+    "Inscrições abertas",
+    "novo login",
+    "newsletter",
+    "promoção",
+    "oferta",
+    "cupom"
+  ]
+}

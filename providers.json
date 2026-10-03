@@ -1,0 +1,66 @@
+{
+  "providers": {
+    "google": {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "prefer": [
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+        "flash"
+      ],
+      "models": [
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite"
+      ]
+    },
+    "openrouter": {
+      "base_url": "https://openrouter.ai/api/v1",
+      "prefer": [
+        "llama-3.3-70b-instruct:free",
+        "gpt-oss-120b:free",
+        "qwen3-235b",
+        "qwen3",
+        ":free"
+      ]
+    },
+    "groq": {
+      "base_url": "https://api.groq.com/openai/v1",
+      "prefer": [
+        "gpt-oss-120b",
+        "llama-4",
+        "llama-3.3",
+        "llama-3.1",
+        "70b"
+      ]
+    },
+    "mistral": {
+      "base_url": "https://api.mistral.ai/v1",
+      "prefer": [
+        "mistral-large-latest",
+        "mistral-medium-latest",
+        "mistral-small-latest"
+      ]
+    }
+  },
+  "routes": {
+    "strong": [
+      "google",
+      "openrouter",
+      "mistral",
+      "groq"
+    ],
+    "fast": [
+      "groq",
+      "google",
+      "mistral",
+      "openrouter"
+    ],
+    "code": [
+      "google",
+      "groq",
+      "openrouter",
+      "mistral"
+    ]
+  }
+}

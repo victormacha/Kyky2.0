@@ -1,0 +1,14 @@
+openai>=1.40
+keyring>=25
+ddgs
+requests
+fastapi
+uvicorn[standard]
+websockets
+edge-tts
+numpy
+sounddevice
+vosk
+playwright
+pystray
+pillow
