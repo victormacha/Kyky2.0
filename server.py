@@ -362,6 +362,17 @@ async def api_foco(x_kyky: str = Header(None)):
     return {"janelas": len(JANELAS)}
 
 
+class Apps(BaseModel):
+    apps: list[str]
+
+
+@app.post("/api/foco/apps")
+def api_foco_apps(b: Apps, authorization: str = Header(None)):
+    """Abre os apps do modo foco (Spotify, VS Code...) pelo nome, como a ferramenta open_app."""
+    need_auth(authorization)
+    return {"resultado": [tools.execute("open_app", {"name": n}, lambda *a: False) for n in b.apps[:8] if n.strip()]}
+
+
 # ---------- conversa por WebSocket ----------
 @app.websocket("/ws")
 async def ws_chat(ws: WebSocket, token: str = ""):

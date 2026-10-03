@@ -35,7 +35,7 @@ async function playTheme(loop) {
   const a = $('#theme'); a.src = URL.createObjectURL(blob); a.loop = !!loop;
   const vol = store.get('vol', 0.7); a.volume = 0;
   try { await a.play(); } catch (e) { return 'bloqueado'; }
-  let v = 0; const iv = setInterval(() => { v = Math.min(vol, v + vol / 20); a.volume = v; if (v >= vol) clearInterval(iv); }, 100);
+  let v = 0; const iv = setInterval(() => { v = Math.min(vol, v + vol / 20); a.volume = talking && loop ? Math.min(v, vol * 0.25) : v; if (v >= vol) clearInterval(iv); }, 100);
   return 'ok';
 }
 function fadeOutTheme() {
@@ -44,10 +44,17 @@ function fadeOutTheme() {
 
 /* ---------------- Modo foco: palmas/estalos (sentinel.py) ligam e desligam; a música só toca aqui ---------------- */
 let focus = false;
+const FOCO_APPS = 'Spotify, Visual Studio Code';
+// música mais baixa enquanto a Kyky fala no modo foco
+function duck(on) { const a = $('#theme'); if (focus && !a.paused) a.volume = store.get('vol', 0.7) * (on ? 0.25 : 1); }
 async function setFocus(on) {
   focus = on; $('#focus-chip').classList.toggle('hidden', !on);
   if (!on) { fadeOutTheme(); $('#subcaption').textContent = 'modo foco desligado'; return; }
+  const apps = store.get('focusApps', FOCO_APPS).split(',').map(s => s.trim()).filter(Boolean);
+  if (apps.length) post('/api/foco/apps', { apps }).catch(() => {});
+  say(`Bem-vindo de volta, ${store.get('nome', 'Victor')}. O que temos pra hoje?`);
   const r = await playTheme(true);
+  if (talking) duck(true);
   if (r === 'sem-musica') $('#subcaption').textContent = 'modo foco ligado — escolha a música em Ajustes';
   else if (r === 'bloqueado') {
     $('#subcaption').textContent = 'modo foco ligado — clique em qualquer lugar para tocar a música';
@@ -81,6 +88,11 @@ async function boot() {
     bar.style.width = ((i + 1) / steps.length * 100) + '%';
   }
   const as = await authState; hasVoice = !!as.has_voice;
+  const salvo = store.get('token', null);   // login lembrado (12h): palmas abrem direto, sem pedir a voz
+  if (salvo) {
+    token = salvo;
+    try { await api('/api/tasks'); enter(); return; } catch (e) { token = null; store.set('token', null); }
+  }
   $('#login').classList.remove('hidden');
   if (!as.has_password) {
     $('#login-title').textContent = 'PRIMEIRO ACESSO — CRIE SUA SENHA';
@@ -123,12 +135,13 @@ async function voiceLogin() {
 }
 
 async function enter() {
+  store.set('token', token);
   const focoPedido = !!new URLSearchParams(location.search).get('foco');   // aberta pelas palmas
   $('#boot').classList.add('out'); setTimeout(() => $('#boot').classList.add('hidden'), 1000);
   $('#app').classList.remove('hidden');
   try { log = (await api('/api/history')).map(m => ({ role: m.role, text: m.content })); } catch (e) {}
   connect(); setTab('chat', true); $('#app').classList.remove('locked'); $('#boot').classList.remove('fade'); setOrbMode(null);
-  if (focoPedido) setFocus(true);
+  if (focoPedido) { setFocus(true); document.querySelectorAll('#side button').forEach(b => b.onclick = () => setTab(b.dataset.tab)); return; }   // modo foco tem a própria saudação
   const h = new Date().getHours();
   const hi = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
   await sleep(900);
@@ -168,7 +181,7 @@ function connect() {
   ws.onclose = ev => {
     if (!token) return;
     if (busy) { busy = false; setState('idle'); }   // a resposta em andamento se perdeu: não deixa o microfone travado
-    if (ev.code === 4401) { token = null; location.reload(); return; }   // sessão inválida (servidor reiniciou)
+    if (ev.code === 4401) { token = null; store.set('token', null); location.reload(); return; }   // sessão inválida (servidor reiniciou)
     wsTries = Math.min(wsTries + 1, 6); $('#subcaption').textContent = 'conexão perdida, reconectando…';
     setTimeout(connect, 1000 * wsTries);
   };
@@ -227,7 +240,7 @@ async function fetchTts(txt) {
   if (!r.ok) throw new Error('tts ' + r.status);
   return URL.createObjectURL(await r.blob());
 }
-function endSpeech() { talking = false; speaking = false; neural = false; setState(busy ? 'thinking' : 'idle'); resumeListening(); }
+function endSpeech() { duck(false); talking = false; speaking = false; neural = false; setState(busy ? 'thinking' : 'idle'); resumeListening(); }
 async function speakNeural(parts, tk) {
   initVoiceAudio(); await vctx.resume();
   const jobs = parts.map(fetchTts); jobs.forEach(j => j.catch(() => {}));
@@ -254,7 +267,7 @@ function speakBrowser(parts) {
 async function say(text) {
   $('#caption').textContent = text.length > 280 ? text.slice(0, 280) + '…' : text;
   if (!$('#t-speak').checked) { setState('idle'); return; }
-  stopSpeaking(); stopListening(); talking = true;
+  stopSpeaking(); stopListening(); talking = true; duck(true);
   const parts = chunks(cleanSpeech(text)); if (!parts.length) { talking = false; setState('idle'); return; }
   const tk = ++speakToken;
   if (store.get('tts', 'pt-BR-FranciscaNeural') !== 'browser') {
@@ -272,7 +285,7 @@ const ALUCINA = new Set(['obrigado', 'obrigada', 'tchau', 'ate a proxima', 'lege
 let recAbort = null;
 function toB64(blob) { return new Promise(r => { const f = new FileReader(); f.onloadend = () => r(String(f.result).split(',')[1]); f.readAsDataURL(blob); }); }
 async function recordUtterance({ maxMs = 15000, waitMs = 7000, silenceMs = 1100 } = {}) {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
   const ctx = new (window.AudioContext || window.webkitAudioContext)(), an = ctx.createAnalyser();
   an.fftSize = 2048; an.smoothingTimeConstant = 0; ctx.createMediaStreamSource(stream).connect(an);
   const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
@@ -457,6 +470,7 @@ async function renderConfig(b) {
   <div class="field"><label>Volume da música</label><input type="range" id="cf-vol" min="0" max="1" step="0.05" value="${store.get('vol', 0.7)}"></div>
   <div class="field"><label>Sua foto (aparece na esfera)</label>
     <input type="file" id="cf-face" accept="image/*"><small>${hasFace ? '✔ foto definida' : 'nenhuma foto'} — aparece enquanto a Kyky analisa a sua voz.</small></div>
+  <div class="field"><label>Apps do modo foco</label><input type="text" id="cf-apps" value="${esc(store.get('focusApps', FOCO_APPS))}" placeholder="ex: Spotify, Visual Studio Code"><small>Abrem sozinhos quando o modo foco liga (2 palmas ou 3 estalos). Separe por vírgula; deixe vazio para não abrir nada.</small></div>
   <div class="field"><label>Resumo ao abrir</label><label style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)"><input type="checkbox" id="cf-brief" ${store.get('brief', true) ? 'checked' : ''}> A Kyky fala como estão seus emails, prazos e mensagens quando você entra</label></div>
   <div class="field"><label>Velocidade da fala</label><input type="range" id="cf-rate" min="0.8" max="1.4" step="0.02" value="${store.get('rate', 1.08)}"></div>
   <div class="field"><label>Voz da Kyky</label><select id="cf-voice" class="btn" style="width:100%;text-transform:none">${[['pt-BR-FranciscaNeural', 'Francisca — natural, feminina'], ['pt-BR-ThalitaMultilingualNeural', 'Thalita — natural, feminina'], ['browser', 'Voz do navegador (reserva)']].map(([v, n]) => `<option value="${v}" ${v === store.get('tts', 'pt-BR-FranciscaNeural') ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
@@ -467,6 +481,7 @@ async function renderConfig(b) {
   $('#cf-music').onchange = async e => { if (e.target.files[0]) { await idbPut('theme', e.target.files[0]); renderTab(); } };
   $('#cf-face').onchange = async e => { if (e.target.files[0]) { await idbPut('face', e.target.files[0]); await loadFace(); renderTab(); } };
   $('#cf-brief').onchange = e => store.set('brief', e.target.checked);
+  $('#cf-apps').onchange = e => store.set('focusApps', e.target.value);
   $('#cf-rate').oninput = e => store.set('rate', +e.target.value);
   $('#cf-test').onclick = () => playTheme(false); $('#cf-clear').onclick = async () => { await idbDel('theme'); renderTab(); };
   $('#cf-vol').oninput = e => { store.set('vol', +e.target.value); $('#theme').volume = +e.target.value; };

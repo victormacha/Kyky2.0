@@ -114,11 +114,40 @@ def check_voice(phrase, vector):
     return ok
 
 
+SESSOES = FILE.parent / "sessions.json"   # só o hash do token fica no disco
+VALIDADE = 12 * 3600                        # login lembrado por 12 horas (ações críticas sempre pedem a senha)
+
+
+def _h(token):
+    return hashlib.sha256((token or "").encode()).hexdigest()
+
+
+def _carregar_sessoes():
+    try:
+        d = json.loads(SESSOES.read_text(encoding="utf-8"))
+    except Exception:
+        d = {}
+    agora = time.time()
+    return {k: v for k, v in d.items() if agora - v < VALIDADE}
+
+
 def new_session():
     t = secrets.token_urlsafe(32)
-    _sessions[t] = time.time()
+    d = _carregar_sessoes()
+    d[_h(t)] = time.time()
+    _sessions[_h(t)] = d[_h(t)]
+    try:
+        SESSOES.write_text(json.dumps(d), encoding="utf-8")
+    except Exception:
+        pass
     return t
 
 
 def valid(token):
-    return token in _sessions
+    if not token:
+        return False
+    criado = _sessions.get(_h(token))
+    if criado is None:                     # servidor reiniciou: confere as sessões salvas
+        _sessions.update(_carregar_sessoes())
+        criado = _sessions.get(_h(token))
+    return criado is not None and time.time() - criado < VALIDADE

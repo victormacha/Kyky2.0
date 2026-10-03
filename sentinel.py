@@ -38,11 +38,11 @@ class Detector:
             self.bg = 0.995 * self.bg + 0.005 * max(rms, 1e-5)
             if self.loud:                      # terminou um evento: validar duração
                 dur = self.loud * 0.01
-                ok = self.sharp and 0.004 < dur <= 0.15   # início abrupto e curto = palma/estalo; longo = voz, tosse, música
-                if ok:
+                ok = self.sharp and 0.004 < dur <= 0.25   # início abrupto e curto (com eco do quarto) = palma/estalo; longo = voz, música
+                if ok and (not self.hits or self.t0 - self.hits[-1] > 0.2):   # eco logo após a palma não conta de novo
                     self.hits.append(self.t0)
                 if self.log:
-                    self.log(f"som: pico {self.pico:.4f} fundo {self.bg:.5f} dur {dur:.2f}s subida {self.pico / self.pre:.0f}x -> {'conta' if ok else 'ignorado'}")
+                    self.log(f"som t={self.t0:.2f}s: pico {self.pico:.4f} fundo {self.bg:.5f} dur {dur:.2f}s subida {self.pico / self.pre:.0f}x -> {'conta' if ok else 'ignorado'}")
                 self.loud = 0
         else:
             if not self.loud:
@@ -51,21 +51,21 @@ class Detector:
                 self.t0, self.pre, self.pico = t, self.prev, rms
             self.pico = max(self.pico, rms)
             if self.loud < 3:                  # a palma pode cair na divisa entre dois quadros: olha os 3 primeiros
-                self.sharp = self.pico > 5 * self.pre   # palma sobe de uma vez; sílaba de fala sobe devagar
+                self.sharp = self.pico > 6 * self.pre   # palma sobe de uma vez; sílaba de fala sobe devagar
             self.loud += 1
-            if self.loud * 0.01 > 0.25:        # barulho longo cancela a sequência
+            if self.loud * 0.01 > 0.4:         # barulho longo cancela a sequência
                 self.hits.clear()
                 self.busy_until = t + 0.4
         self.prev = max(rms, 1e-4)
         # sequência terminada?
-        if self.hits and not self.loud and t - self.hits[-1] > 0.55:
+        if self.hits and not self.loud and t - self.hits[-1] > 1.3:   # espera a próxima palma (ritmo normal: 0,4 a 1,2 s)
             h, self.hits = self.hits, []
             if len(h) in (2, 3):
                 gaps = np.diff(h)
-                if gaps.min() > 0.12 and gaps.max() < 0.9 and (gaps.max() - gaps.min()) < 0.45:
+                if gaps.min() > 0.12 and gaps.max() < 1.25 and (gaps.max() - gaps.min()) < 0.6:
                     self.busy_until = t + 1.0
                     return "palmas" if len(h) == 2 else "estalos"
-        if self.hits and t - self.hits[0] > 3:  # sequência velha demais
+        if self.hits and t - self.hits[0] > 4:  # sequência velha demais
             self.hits.clear()
         return None
 
@@ -90,6 +90,9 @@ def registrar(txt):
         pass
 
 
+_abriu_em = 0.0
+
+
 def acordar(motivo):
     """Palmas/estalos = modo foco. Com a janela aberta, só avisa; fechada, abre a Kyky já em modo foco."""
     import urllib.request
@@ -103,6 +106,11 @@ def acordar(motivo):
             return                           # a janela aberta entrou/saiu do modo foco
     except Exception:
         pass
+    global _abriu_em
+    if time.time() - _abriu_em < 60:     # uma janela acabou de abrir e ainda está no login: não abre outra por cima
+        registrar("janela já abrindo, ignorado")
+        return
+    _abriu_em = time.time()
     subprocess.Popen([sys.executable, str(BASE / "start_kyky.py"), "--wake", *(["--foco"] if foco else [])], cwd=BASE,
                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
