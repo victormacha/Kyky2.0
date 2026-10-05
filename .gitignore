@@ -14,3 +14,7 @@ data/
 profile.md
 candidate.md
 reports/
+
+# configuração pessoal de cada dono (o instalador cria)
+dono.json
+dist/

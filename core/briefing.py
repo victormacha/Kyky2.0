@@ -2,10 +2,12 @@
 from concurrent.futures import ThreadPoolExecutor
 
 FONTES_PADRAO = ("tarefas", "canvas", "email", "instagram")
+RECURSO = {"canvas": "canvas", "email": "email", "instagram": "instagram"}   # fonte -> recurso do dono.json
 
 
 def coletar(fontes=FONTES_PADRAO):
-    from . import canvas, mail, social, tasks
+    from . import canvas, dono, mail, social, tasks
+    fontes = [f for f in fontes if f not in RECURSO or dono.tem(RECURSO[f])]
     mapa = {"tarefas": lambda: tasks.list_tasks("pending"), "canvas": lambda: canvas.canvas_upcoming(5),
             "email": lambda: mail.mail_unread(6), "instagram": social.instagram_status}
     saida = {}
@@ -21,14 +23,15 @@ def coletar(fontes=FONTES_PADRAO):
 
 def resumo(brain=None):
     from .brain import Brain
+    from .dono import NOME
     dados = coletar()
     bloco = "\n\n".join(f"### {k}\n{v}" for k, v in dados.items())
     pedido = (
-        "Com base APENAS nos dados abaixo, faça um resumo FALADO para o Victor, em até 5 frases corridas, tom natural e direto. "
+        f"Com base APENAS nos dados abaixo, faça um resumo FALADO para {NOME}, em até 5 frases corridas, tom natural e direto. "
         "Priorize: prazos de hoje e amanhã, emails que parecem importantes (cite quem mandou e o assunto), mensagens e notificações novas. "
         "Se uma fonte estiver indisponível ou não configurada, diga isso numa frase curta e siga. Não invente nada. "
         "Sem listas, sem emojis, sem símbolos.\n\n" + bloco)
     texto, _ = (brain or Brain()).ask([
-        {"role": "system", "content": "Você é a Kyky, assistente pessoal do Victor. Português do Brasil."},
+        {"role": "system", "content": f"Você é a Kyky, assistente pessoal de {NOME}. Português do Brasil."},
         {"role": "user", "content": pedido}], "fast")
     return texto

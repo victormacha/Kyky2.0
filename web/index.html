@@ -2,9 +2,16 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Kyky</title>
 <link rel="icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#03060d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kyky">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -36,6 +43,7 @@
   <nav id="side">
     <div class="side-logo">K</div>
     <button data-tab="chat" class="active"><span>💬</span>Conversa</button>
+    <button data-tab="ponte"><span>⇄</span>Ponte<i id="ponte-badge" class="badge hidden"></i></button>
     <button data-tab="tasks"><span>✓</span>Tarefas</button>
     <button data-tab="canvas"><span>🎓</span>Canvas</button>
     <button data-tab="leads"><span>📍</span>Leads</button>

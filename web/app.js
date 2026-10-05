@@ -4,10 +4,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 let token = null, ws = null, log = [], busy = false, speaking = false, listening = false;
 let state = 'idle', level = 0, target = 0, tab = 'chat', talking = false, hasVoice = false;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// celular: o app vira um controle remoto do PC (a Kyky continua rodando no computador)
+const MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || matchMedia('(max-width: 560px)').matches;
+document.documentElement.classList.toggle('mobile', MOBILE);
 
 /* ---------------- API ---------------- */
 async function api(path, opt = {}) {
-  const r = await fetch(path, { ...opt, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+  const r = await fetch(path, { ...opt, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opt.headers || {}) } });
   if (!r.ok) { let d = ''; try { d = (await r.json()).detail; } catch (e) {} throw new Error(d || r.status); }
   return r.json();
 }
@@ -52,7 +55,7 @@ async function setFocus(on) {
   if (!on) { fadeOutTheme(); $('#subcaption').textContent = 'modo foco desligado'; return; }
   const apps = store.get('focusApps', FOCO_APPS).split(',').map(s => s.trim()).filter(Boolean);
   if (apps.length) post('/api/foco/apps', { apps }).catch(() => {});
-  say(`Bem-vindo de volta, ${store.get('nome', 'Victor')}. O que temos pra hoje?`);
+  say(`Bem-vindo de volta, ${DONO.nome}. O que temos pra hoje?`);
   const r = await playTheme(true);
   if (talking) duck(true);
   if (r === 'sem-musica') $('#subcaption').textContent = 'modo foco ligado — escolha a música em Ajustes';
@@ -64,21 +67,31 @@ async function setFocus(on) {
 $('#focus-chip').onclick = () => setFocus(false);
 
 /* ---------------- Boot ---------------- */
+/* ---------------- Dono desta Kyky (dono.json no PC): nome e recursos ligados ---------------- */
+const DONO = { nome: 'você', recursos: [], cidade_exemplo: 'sua cidade' };
+const TAB_RECURSO = { canvas: 'canvas', leads: 'leads', jobs: 'vagas', github: 'github' };
+const tem = r => DONO.recursos.includes(r);
+function aplicaDono(d) {
+  Object.assign(DONO, d || {});
+  document.querySelectorAll('#side button').forEach(b => { const r = TAB_RECURSO[b.dataset.tab]; if (r) b.classList.toggle('hidden', !tem(r)); });
+}
+
 async function boot() {
   const ul = $('#boot-steps'), bar = $('#boot-bar');
   const status = fetch('/api/status').then(r => r.json()).catch(() => null);
   const authState = fetch('/api/auth/state').then(r => r.json());
+  aplicaDono((await authState.catch(() => ({}))).dono);
   const steps = [
     ['Núcleo da Kyky', async () => [true, 'online']],
     ['Cofre de chaves', async () => [true, 'selado']],
     ['Provedores de IA', async () => { const s = await status; return s ? [s.providers.length > 0, s.providers.length + '/' + s.total_providers] : [false, 'erro']; }],
     ['Busca na web', async () => { const s = await status; return [!!(s && s.search), s && s.search ? 'ativa' : 'sem chave']; }],
     ['Memória local', async () => [true, 'sincronizada']],
-    ['Canvas da faculdade', async () => { const s = await status; return [!!(s && s.canvas.ok), s && s.canvas.ok ? 'conectado' : 'indisponível']; }],
-    ['GitHub', async () => { const s = await status; return [!!(s && s.github.ok), s && s.github.ok ? s.github.detail : 'indisponível']; }],
+    tem('canvas') && ['Canvas da faculdade', async () => { const s = await status; return [!!(s && s.canvas.ok), s && s.canvas.ok ? 'conectado' : 'indisponível']; }],
+    tem('github') && ['GitHub', async () => { const s = await status; return [!!(s && s.github.ok), s && s.github.ok ? s.github.detail : 'indisponível']; }],
     ['Reconhecimento de voz', async () => [!!window.MediaRecorder, window.MediaRecorder ? 'Whisper pronto' : 'não suportado']],
     ['Aguardando autenticação', async () => [true, '···']],
-  ];
+  ].filter(Boolean);
   for (let i = 0; i < steps.length; i++) {
     const li = document.createElement('li');
     li.innerHTML = `<span>${steps[i][0]}</span><span class="st run">···</span>`; ul.appendChild(li);
@@ -140,7 +153,7 @@ async function enter() {
   $('#boot').classList.add('out'); setTimeout(() => $('#boot').classList.add('hidden'), 1000);
   $('#app').classList.remove('hidden');
   try { log = (await api('/api/history')).map(m => ({ role: m.role, text: m.content })); } catch (e) {}
-  connect(); setTab('chat', true); $('#app').classList.remove('locked'); $('#boot').classList.remove('fade'); setOrbMode(null);
+  connect(); atualizaBadge(); setTab('chat', true); $('#app').classList.remove('locked'); $('#boot').classList.remove('fade'); setOrbMode(null);
   if (focoPedido) { setFocus(true); document.querySelectorAll('#side button').forEach(b => b.onclick = () => setTab(b.dataset.tab)); return; }   // modo foco tem a própria saudação
   const h = new Date().getHours();
   const hi = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
@@ -158,7 +171,10 @@ async function enter() {
 
 /* ---------------- WebSocket ---------------- */
 // links externos abrem no navegador PADRÃO do Windows (Brave, Chrome...), não dentro da janela do app
-async function openExt(url) { try { await post('/api/open', { url }); } catch (e) { window.open(url, '_blank', 'noopener'); } }
+async function openExt(url) {
+  if (MOBILE) { window.open(url, '_blank', 'noopener'); return; }   // no celular, abre no próprio celular
+  try { await post('/api/open', { url }); } catch (e) { window.open(url, '_blank', 'noopener'); }
+}
 let wsTries = 0;
 const touched = new Set();
 const TOOLTAB = { search_leads: 'leads', queue_outreach: 'leads', search_jobs: 'jobs', prepare_application: 'jobs', add_task: 'tasks', complete_task: 'tasks' };
@@ -167,7 +183,8 @@ function openTouched() {
   if (t) { tab = t; setTab(t); if (!$('#drawer').classList.contains('open')) setTab(t); }
 }
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';   // pelo Tailscale (HTTPS) precisa ser wss
+  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}&device=${MOBILE ? 'mobile' : 'pc'}`);
   ws.onopen = () => { wsTries = 0; };
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
@@ -175,6 +192,8 @@ function connect() {
     else if (m.type === 'answer') { setOrbMode(null); const tx = plain(m.text); pushLog('assistant', tx); say(tx); $('#subcaption').textContent = 'via ' + m.provider; openTouched(); }
     else if (m.type === 'confirm') askConfirm(m);
     else if (m.type === 'focus') setFocus(!focus);
+    else if (m.type === 'ponte') ponteChegou(m);
+    else if (m.type === 'ponte_pc') { $('#subcaption').textContent = '📥 chegou do celular: ' + m.name + ' (pasta Do celular)'; if (tab === 'ponte') renderTab(); }
     else if (m.type === 'error') { setOrbMode(null); $('#subcaption').textContent = '⚠ ' + m.text; setState('idle'); }
     else if (m.type === 'idle') { busy = false; setOrbMode(null); if (!speaking) setState('idle'); resumeListening(); }
   };
@@ -378,7 +397,7 @@ function askConfirm(m) {
 }
 
 /* ---------------- Painéis laterais ---------------- */
-const TITLES = { chat: 'Conversa', tasks: 'Tarefas', canvas: 'Canvas', leads: 'Leads e contatos', reports: 'Relatórios', github: 'GitHub', jobs: 'Vagas', config: 'Ajustes' };
+const TITLES = { chat: 'Conversa', tasks: 'Tarefas', canvas: 'Canvas', leads: 'Leads e contatos', reports: 'Relatórios', github: 'GitHub', jobs: 'Vagas', config: 'Ajustes', ponte: 'Ponte PC ⇄ celular' };
 function setTab(t, keepClosed) {
   const same = t === tab && $('#drawer').classList.contains('open') && !keepClosed;
   tab = t; document.querySelectorAll('#side button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
@@ -430,7 +449,7 @@ async function renderTab() {
       b.querySelectorAll('.card.click').forEach(c => c.onclick = () => openExt(c.dataset.u));
     } else if (tab === 'leads') {
       const items = (await api('/api/outreach')).items;
-      b.innerHTML = '<p class="hint">Peça: “Kyky, busque barbearias sem site em Betim”. Os leads caem aqui prontos para o WhatsApp.</p>' + (items.map(l => `
+      b.innerHTML = '<p class="hint">Peça: “Kyky, busque barbearias sem site em ' + esc(DONO.cidade_exemplo) + '”. Os leads caem aqui prontos para o WhatsApp.</p>' + (items.map(l => `
         <div class="card" data-id="${l.id}"><div class="row-flex" style="justify-content:space-between"><div class="ct">${esc(l.name)}</div>${pill(l.score, l.score >= 70 ? 'good' : 'warn')}</div>
         <div class="meta">${esc(l.address || '')}</div><div style="margin:6px 0">${pill('+' + l.phone)} ${pill(l.status, l.status === 'pendente' ? '' : 'good')}</div>
         <div class="btns"><button class="btn small wa">WHATSAPP</button><button class="btn small ghost done">ENVIADO</button><button class="btn small ghost danger skip">DESCARTAR</button></div></div>`).join('') || empty('Nenhum lead ainda.'));
@@ -451,6 +470,7 @@ async function renderTab() {
         b.innerHTML = `<div class="btns"><button class="btn small" id="jopen">ABRIR A VAGA</button><button class="btn small ghost" id="jback">VOLTAR</button></div><div class="doc">${md(r.text)}</div>`;
         $('#jopen').onclick = () => openExt(r.url); $('#jback').onclick = renderTab;
       });
+    } else if (tab === 'ponte') { await renderPonte(b);
     } else if (tab === 'reports') {
       const list = await api('/api/reports');
       b.innerHTML = '<button id="gen" class="btn small" style="margin-bottom:12px">GERAR RELATÓRIO DE HOJE</button>' + (list.map(n => `<div class="card click" data-n="${n}"><div class="ct">${n.replace('.md', '').split('-').reverse().join('/')}</div><div class="meta">relatório diário</div></div>`).join('') || empty('Nenhum relatório ainda.'));
@@ -459,6 +479,68 @@ async function renderTab() {
     }
   } catch (e) { b.innerHTML = empty('erro: ' + esc(e.message)); }
 }
+/* ---------------- Ponte PC ⇄ celular ---------------- */
+const kb = n => n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+function badgePonte(n) { const e = $('#ponte-badge'); e.textContent = n || ''; e.classList.toggle('hidden', !n || !MOBILE); }
+function ponteChegou(m) {
+  $('#subcaption').textContent = '📲 chegou do PC: ' + m.name + (m.nota ? ' — ' + m.nota : '');
+  try { navigator.vibrate && navigator.vibrate([80, 60, 80]); } catch (e) {}
+  if (window.Notification && Notification.permission === 'granted' && document.hidden)
+    navigator.serviceWorker?.ready.then(r => r.showNotification('Kyky', { body: 'Chegou do PC: ' + m.name, icon: '/icon-192.png', tag: 'ponte' })).catch(() => {});
+  if (tab === 'ponte' && $('#drawer').classList.contains('open')) renderTab(); else atualizaBadge();
+}
+async function atualizaBadge() { if (!MOBILE || !token) return; try { badgePonte((await api('/api/ponte')).items.length); } catch (e) {} }
+async function baixarPonte(nome) {
+  const r = await fetch('/api/ponte/arquivo/' + encodeURIComponent(nome), { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error('erro ' + r.status);
+  return new File([await r.blob()], nome, { type: r.headers.get('content-type') || 'application/octet-stream' });
+}
+async function enviarArquivos(files) {
+  const msg = $('#pt-msg'); let ok = 0;
+  for (const f of files) {
+    if (f.size > 50 * 1048576) { msg.textContent = f.name + ': grande demais (máx. 50 MB)'; continue; }
+    msg.textContent = `enviando ${f.name}…`;
+    try {
+      const data = await toB64(f);
+      await api('/api/ponte/enviar', { method: 'POST', body: JSON.stringify({ name: f.name, data }), headers: { 'X-Aparelho': MOBILE ? 'mobile' : 'pc' } });
+      ok++;
+    } catch (e) { msg.textContent = 'falhou: ' + f.name + ' (' + e.message + ')'; }
+  }
+  if (ok) msg.textContent = `✔ ${ok} arquivo(s) enviado(s) ` + (MOBILE ? 'para o PC (pasta Do celular)' : 'para o celular');
+  setTimeout(renderTab, 1200);
+}
+async function renderPonte(b) {
+  const d = await api('/api/ponte');
+  badgePonte(d.items.length);
+  const lista = d.items.map(i => `<div class="card" data-n="${esc(i.name)}"><div class="ct">${esc(i.name)}</div>
+    <div class="meta">${kb(i.size)} · ${new Date(i.quando * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}${i.nota ? ' · ' + esc(i.nota) : ''}</div>
+    ${MOBILE ? `<div class="btns"><button class="btn small sv">SALVAR</button>${navigator.canShare ? '<button class="btn small ghost sh">COMPARTILHAR</button>' : ''}<button class="btn small ghost danger rm">REMOVER</button></div>`
+             : `<div class="btns"><button class="btn small ghost danger rm">CANCELAR ENVIO</button></div>`}</div>`).join('');
+  b.innerHTML = `<p class="hint">${MOBILE
+      ? 'Arquivos que a Kyky ou o PC mandaram para você. Peça no PC: “Kyky, manda esse PDF pro meu celular”.'
+      : 'Arquivos esperando o celular baixar. Peça: “Kyky, cria no meu celular uma lista de compras” ou escolha um arquivo abaixo.'}</p>
+    <div class="field"><label>${MOBILE ? 'Mandar para o PC' : 'Mandar para o celular'}</label><input type="file" id="pt-file" multiple>
+    <small>${MOBILE ? 'Chega no PC na pasta: ' + esc(d.pasta_pc) : 'Aparece aqui e na aba Ponte do celular.'}</small><p class="msg" id="pt-msg"></p></div>
+    <label style="display:block;font-size:11px;letter-spacing:.15em;color:var(--dim);margin:6px 0 8px;text-transform:uppercase">${MOBILE ? 'Recebidos do PC' : 'Na fila para o celular'}</label>
+    ${lista || empty(MOBILE ? 'Nada novo do PC.' : 'Nada esperando o celular.')}`;
+  $('#pt-file').onchange = e => e.target.files.length && enviarArquivos([...e.target.files]);
+  b.querySelectorAll('.card').forEach(c => {
+    const n = c.dataset.n, rm = c.querySelector('.rm'), sv = c.querySelector('.sv'), sh = c.querySelector('.sh');
+    rm.onclick = async () => { await api('/api/ponte/arquivo/' + encodeURIComponent(n), { method: 'DELETE' }); renderTab(); };
+    if (sv) sv.onclick = async () => {
+      sv.textContent = 'BAIXANDO…';
+      try { const f = await baixarPonte(n), a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = n; a.click(); sv.textContent = '✔ SALVO'; }
+      catch (e) { sv.textContent = 'ERRO'; }
+    };
+    if (sh) sh.onclick = async () => {
+      try { const f = await baixarPonte(n); if (navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: n }); }
+      catch (e) { if (e.name !== 'AbortError') $('#pt-msg').textContent = 'não deu para compartilhar: ' + e.message; }
+    };
+  });
+  if (MOBILE && window.Notification && Notification.permission === 'default')
+    Notification.requestPermission().catch(() => {});
+}
+
 async function renderConfig(b) {
   const has = !!(await idbGet('theme'));
   const voices = ptVoices(), hasFace = !!(await idbGet('face'));
@@ -605,3 +687,4 @@ $('#t-always').onchange = e => { if (e.target.checked) startListening(); else st
 $('#t-speak').onchange = e => { if (!e.target.checked) stopSpeaking(); };
 if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
 loadFace(); loop(); boot();
+if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => {});

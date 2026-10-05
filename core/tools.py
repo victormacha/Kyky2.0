@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from . import web, tasks, leads, canvas, github, jobs, browser, mail, social, briefing
+from . import web, tasks, leads, canvas, github, jobs, browser, mail, social, briefing, ponte
 
 ROOT = Path(__file__).parent.parent
 WORKSPACE = ROOT / "workspace"
@@ -15,7 +15,7 @@ EXECUTAVEIS = {".exe", ".bat", ".cmd", ".ps1", ".vbs", ".msi", ".lnk", ".js", ".
 
 # auto = executa direto | ask = pede a sua confirmação antes (write_file e open_path decidem caso a caso)
 PERMISSIONS = {"list_files": "auto", "read_file": "auto", "write_file": "auto", "run_python": "ask",
-               "open_path": "auto", "open_app": "auto", "list_apps": "auto", "google_search": "auto", "run_command": "ask", "github_create_repo": "ask", "github_publish": "ask",
+               "send_to_phone": "auto", "phone_files": "auto", "open_path": "auto", "open_app": "auto", "list_apps": "auto", "google_search": "auto", "run_command": "ask", "github_create_repo": "ask", "github_publish": "ask",
                "web_search": "auto", "fetch_url": "auto",
                "add_task": "auto", "list_tasks": "auto", "complete_task": "auto",
                "search_leads": "auto", "queue_outreach": "auto", "list_outreach": "auto",
@@ -196,7 +196,7 @@ def needs_confirm(name, args):
 
 
 FUNCS = {"list_files": list_files, "read_file": read_file, "write_file": write_file, "run_python": run_python,
-         "open_path": open_path, "open_app": open_app, "list_apps": list_apps, "google_search": google_search, "run_command": run_command,
+         "send_to_phone": ponte.send_to_phone, "phone_files": ponte.phone_files, "open_path": open_path, "open_app": open_app, "list_apps": list_apps, "google_search": google_search, "run_command": run_command,
          "github_create_repo": github.github_create_repo, "github_publish": github.github_publish,
          "web_search": web.search, "fetch_url": web.fetch,
          "add_task": tasks.add_task, "list_tasks": tasks.list_tasks, "complete_task": tasks.complete_task,
@@ -224,6 +224,11 @@ SPECS = [
           "(Área de Trabalho, Documentos...); relativo cai no workspace.", {"path": _s, "content": _s}, ["path", "content"]),
     _spec("open_path", "Abre no PC: arquivo no programa padrão, pasta no Explorer, ou link no navegador.",
           {"path": _s}, ["path"]),
+    _spec("send_to_phone", "Manda um arquivo para o CELULAR do usuário: 'path' para um arquivo do PC que já existe, ou 'content' + 'name' "
+          "para criar um arquivo novo (texto) direto no celular. 'nota' é um recado curto que aparece junto.",
+          {"path": _s, "content": _s, "name": _s, "nota": _s}, []),
+    _spec("phone_files", "Lista os arquivos que o celular mandou para o PC (ficam na pasta 'Do celular' da Área de Trabalho).",
+          {"limit": {"type": "integer"}}, []),
     _spec("open_app", "Abre um aplicativo instalado no PC pelo nome (ex: Spotify, Discord, Word, Calculadora, Brave).",
           {"name": _s}, ["name"]),
     _spec("list_apps", "Lista os aplicativos instalados no PC (filtro opcional por nome).", {"filtro": _s}, []),
@@ -294,7 +299,23 @@ SPECS = [
 ]
 
 
-def subset(prefixos=("github_", "anotar", "list_files", "read_file", "write_file", "open_path", "open_app", "run_command")):
+GRUPOS = {"github": lambda n: n.startswith("github_"),
+          "leads": lambda n: n in ("search_leads", "queue_outreach", "list_outreach", "whatsapp_link", "mark_outreach", "build_site"),
+          "vagas": lambda n: n in ("search_jobs", "list_jobs", "update_job", "prepare_application"),
+          "canvas": lambda n: n.startswith("canvas_"),
+          "email": lambda n: n == "mail_unread",
+          "instagram": lambda n: n in ("instagram_status", "read_page_logged")}
+
+
+def _ligada(nome):
+    from . import dono
+    return all(dono.tem(g) or not teste(nome) for g, teste in GRUPOS.items())
+
+
+SPECS = [s for s in SPECS if _ligada(s["function"]["name"])]
+
+
+def subset(prefixos=("github_", "anotar", "list_files", "read_file", "write_file", "open_path", "open_app", "run_command", "send_to_phone", "phone_files")):
     """Só as ferramentas relevantes (economiza tokens em tarefas de código)."""
     return [s for s in SPECS if s["function"]["name"].startswith(tuple(prefixos))]
 
@@ -328,7 +349,7 @@ def describe(name, args):
 
 
 def execute(name, args, confirm):
-    fn = FUNCS.get(name)
+    fn = FUNCS.get(name) if _ligada(name) else None
     if not fn:
         return f"erro: ferramenta desconhecida ({name})"
     try:

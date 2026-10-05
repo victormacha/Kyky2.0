@@ -137,3 +137,38 @@ input:focus{border-color:var(--cyan);box-shadow:0 0 14px rgba(53,224,255,.3)}
 #drawer,#side{flex:none}
 #drawer.open{width:min(420px,42vw)}
 #stage{overflow:hidden}
+
+/* ---------- aba Ponte ---------- */
+#side button{position:relative}
+.badge{position:absolute;top:3px;right:8px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--pink);color:#fff;
+  font-size:10px;font-style:normal;line-height:17px;font-weight:700;letter-spacing:0;box-shadow:0 0 10px var(--pink)}
+input[type=file]{width:100%;color:var(--dim);font-size:13px}
+input[type=file]::file-selector-button{background:rgba(53,224,255,.12);color:var(--cyan);border:1px solid var(--cyan);padding:9px 14px;
+  border-radius:4px;margin-right:10px;font-weight:600;letter-spacing:.1em}
+
+/* ---------- celular (o app vira controle remoto do PC) ---------- */
+html.mobile #app{flex-direction:column}
+html.mobile #side{order:3;width:100%;height:calc(64px + env(safe-area-inset-bottom));flex-direction:row;gap:2px;overflow-x:auto;
+  padding:6px 6px calc(6px + env(safe-area-inset-bottom));border-right:0;border-top:1px solid var(--line);scrollbar-width:none}
+html.mobile #side::-webkit-scrollbar{display:none}
+html.mobile .side-logo{display:none}
+html.mobile #side button{flex:0 0 66px;padding:5px 0;font-size:9px;gap:2px}
+html.mobile #side button span{font-size:19px}
+html.mobile #side .bottom{margin-top:0}
+html.mobile #drawer{position:fixed;inset:0 0 calc(64px + env(safe-area-inset-bottom)) 0;width:100%!important;z-index:6;display:none;
+  border-right:0;padding-top:env(safe-area-inset-top);background:rgba(3,8,16,.97)}
+html.mobile #drawer.open{display:flex}
+html.mobile #drawer header,html.mobile #drawer-body{min-width:0}
+html.mobile #stage{order:1;flex:1;min-height:0;padding:calc(48px + env(safe-area-inset-top)) 0 10px;justify-content:flex-start}
+html.mobile #orb{width:min(84vw,44vh);height:min(84vw,44vh);flex:none}
+html.mobile #state-chip{top:calc(10px + env(safe-area-inset-top));font-size:10px}
+html.mobile #focus-chip{display:none}
+html.mobile #caption{font-size:16px;-webkit-line-clamp:6;margin-top:4px;padding:0 8px}
+html.mobile #subcaption{max-width:94%}
+html.mobile #composer{width:94%;margin-top:auto}
+html.mobile #composer input{font-size:16px}          /* 16px evita o zoom automático do iPhone ao digitar */
+html.mobile .mic{width:50px;height:50px;font-size:20px}
+html.mobile .toggles{gap:14px;flex-wrap:wrap;justify-content:center;font-size:11px;margin-top:8px}
+html.mobile .modal-box{padding:18px}
+html.mobile .boot-box{padding:24px 18px}
+html.mobile .boot-logo{font-size:28px}

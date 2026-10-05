@@ -28,14 +28,15 @@ def codigo_mudou():
 
 
 def derrubar_servidor():
+    # quem está de fato escutando na porta (o server.pid pode estar desatualizado)
+    out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True).stdout
+    pids = {l.split()[-1] for l in out.splitlines() if "127.0.0.1:8765 " in l and len(l.split()) >= 5 and l.split()[-2].upper().startswith(("LISTEN", "ESCUTA"))}
     pid = BASE / "data" / "server.pid"
     if pid.exists():
-        subprocess.run(["taskkill", "/F", "/PID", pid.read_text().strip()], capture_output=True)
-    else:   # servidor de uma versão antiga, sem server.pid: acha quem está na porta
-        out = subprocess.run(["netstat", "-ano"], capture_output=True, text=True).stdout
-        for linha in out.splitlines():
-            if ":8765 " in linha and "LISTEN" in linha.upper():
-                subprocess.run(["taskkill", "/F", "/PID", linha.split()[-1]], capture_output=True)
+        pids.add(pid.read_text().strip())
+    for p in pids:
+        if p.isdigit() and p != "0":
+            subprocess.run(["taskkill", "/F", "/PID", p], capture_output=True)
     for _ in range(20):
         if not servidor_no_ar():
             break
